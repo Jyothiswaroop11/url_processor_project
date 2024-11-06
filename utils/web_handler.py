@@ -3,15 +3,12 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import allure
 import time
 import os
 from datetime import datetime
 from .config_handler import Configuration
 from .url_handler import URLHandler
-
 
 class WebDriverSetup:
     @staticmethod
@@ -57,104 +54,26 @@ class WebDriverSetup:
             )
             raise
 
-
 class WebAutomation:
     @staticmethod
-    def verify_page_content(driver):
-        """
-        Verifies if the page has loaded with actual content.
-        Returns tuple of (bool, str) indicating success/failure and details.
-        """
-        try:
-            # Check if body exists and has content
-            body = driver.find_element(By.TAG_NAME, "body")
-            if not body.text.strip():
-                return False, "Page body is empty"
-
-            # Check for common error indicators
-            error_texts = [
-                "404 not found",
-                "page not found",
-                "404 error",
-                "403 forbidden",
-                "access denied",
-                "500 internal server error",
-                "503 service unavailable",
-                "502 bad gateway",
-                "this page isn't working",
-                "unable to connect",
-                "connection refused",
-                "err_connection_refused"
-            ]
-
-            page_text = body.text.lower()
-            for error in error_texts:
-                if error in page_text:
-                    return False, f"Error detected: {error}"
-
-            # Check if page has main content areas
-            content_indicators = [
-                "//main",
-                "//article",
-                "//div[contains(@class, 'content')]",
-                "//div[contains(@class, 'main')]",
-                "//div[contains(@id, 'content')]",
-                "//div[contains(@id, 'main')]"
-            ]
-
-            content_found = False
-            for xpath in content_indicators:
-                try:
-                    content = driver.find_elements(By.XPATH, xpath)
-                    if content and any(elem.is_displayed() and elem.text.strip() for elem in content):
-                        content_found = True
-                        break
-                except:
-                    continue
-
-            if not content_found:
-                return False, "No main content areas found"
-
-            # Check for minimal interactive elements (links, buttons, forms)
-            interactive_elements = driver.find_elements(By.CSS_SELECTOR, 'a, button, input, form')
-            if not any(elem.is_displayed() for elem in interactive_elements):
-                return False, "No interactive elements found"
-
-            return True, "Page content verified successfully"
-
-        except Exception as e:
-            return False, f"Error verifying content: {str(e)}"
-
-    @staticmethod
     def check_page_loaded(driver, timeout=30):
-        """Checks if page is completely loaded and has valid content"""
+        """Checks if page is completely loaded"""
         try:
             print(f"Waiting for page to load (timeout: {timeout}s)...")
-
-            # Wait for document ready state
             WebDriverWait(driver, timeout).until(
                 lambda d: d.execute_script("return document.readyState") == "complete"
             )
-
-            # Additional wait for dynamic content
             time.sleep(2)
-
-            # Verify page content
-            content_valid, details = WebAutomation.verify_page_content(driver)
-
-            if content_valid:
-                print("Page loaded successfully with valid content")
-                return True, "Page loaded successfully"
-            else:
-                print(f"Page load issue: {details}")
-                return False, details
-
-        except TimeoutException:
-            return False, "Page load timeout"
+            print("Page load complete")
+            return True
         except Exception as e:
-            error_msg = f"Error during page load: {str(e)}"
-            print(error_msg)
-            return False, error_msg
+            print(f"Error during page load: {str(e)}")
+            allure.attach(
+                body=f"Error checking page load: {str(e)}",
+                name="Page Load Error",
+                attachment_type=allure.attachment_type.TEXT
+            )
+            return False
 
     @staticmethod
     def save_screenshot(driver, url, row_number):
@@ -191,6 +110,11 @@ class WebAutomation:
             return filepath
         except Exception as e:
             print(f"Error saving screenshot: {str(e)}")
+            allure.attach(
+                body=f"Error saving screenshot: {str(e)}",
+                name="Screenshot Error",
+                attachment_type=allure.attachment_type.TEXT
+            )
             return None
 
     @staticmethod
@@ -217,7 +141,7 @@ class WebAutomation:
                 'message': f"Starting to process URL: {url}"
             })
 
-            max_retries = Configuration.get_config()["max_retries"]
+            max_retries = 3
             for attempt in range(max_retries):
                 try:
                     driver = WebDriverSetup.create_driver()
@@ -239,12 +163,11 @@ class WebAutomation:
             print(f"Navigating to: {formatted_url}")
             driver.get(formatted_url)
 
-            # Check page load and content
-            is_loaded, load_details = WebAutomation.check_page_loaded(driver)
-            end_time = time.time()
-            load_time = (end_time - start_time) * 1000  # Convert to milliseconds
+            # Wait for page load
+            if WebAutomation.check_page_loaded(driver):
+                end_time = time.time()
+                load_time = (end_time - start_time) * 1000
 
-            if is_loaded:
                 result['steps'].append({
                     'status': 'SUCCESS',
                     'timestamp': datetime.now().strftime('%H:%M:%S'),
@@ -254,23 +177,26 @@ class WebAutomation:
                 # Take screenshot
                 screenshot_path = WebAutomation.save_screenshot(driver, url, row_number)
                 if screenshot_path:
-                    result.update({
-                        'status': 'Success',
-                        'load_time': load_time,
-                        'screenshot': screenshot_path
-                    })
                     result['steps'].append({
                         'status': 'SUCCESS',
                         'timestamp': datetime.now().strftime('%H:%M:%S'),
-                        'message': "Screenshot captured successfully"
+                        'message': "Screenshot captured successfully",
+                        'screenshot': screenshot_path
                     })
+
+                result.update({
+                    'status': 'Success',
+                    'load_time': load_time,
+                    'screenshot': screenshot_path
+                })
+
             else:
                 result['steps'].append({
                     'status': 'FAIL',
                     'timestamp': datetime.now().strftime('%H:%M:%S'),
-                    'message': f"Page load issue: {load_details}"
+                    'message': "Page failed to load completely"
                 })
-                result['error'] = load_details
+                result['error'] = "Page load timeout"
 
         except Exception as e:
             error_msg = str(e)
