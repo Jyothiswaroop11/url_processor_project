@@ -10,5 +10,6 @@ url_processor_project.egg-info/top_level.txt
 utils/__init__.py
 utils/config_handler.py
 utils/excel_handler.py
+utils/report_handler.py
 utils/url_handler.py
 utils/web_handler.py

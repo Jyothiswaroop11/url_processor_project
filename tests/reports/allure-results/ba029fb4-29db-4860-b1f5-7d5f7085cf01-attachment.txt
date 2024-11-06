@@ -1,0 +1,1 @@
+Error in test execution: name 'successCount' is not defined

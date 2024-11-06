@@ -1,132 +1,84 @@
 import os
+import base64
+import time
 from datetime import datetime
 from .config_handler import Configuration
 
 
 class ReportHandler:
     @staticmethod
+    def encode_image_to_base64(image_path):
+        """Convert image to base64 string"""
+        try:
+            with open(image_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode()
+                return f"data:image/png;base64,{encoded_string}"
+        except Exception as e:
+            print(f"Error encoding image: {str(e)}")
+            return None
+
+    @staticmethod
+    def get_duration(start_time):
+        """Calculate duration in human-readable format"""
+        duration = time.time() - start_time
+        hours = int(duration // 3600)
+        minutes = int((duration % 3600) // 60)
+        seconds = int(duration % 60)
+        milliseconds = int((duration * 1000) % 1000)
+        return f"{hours}h {minutes}m {seconds}s+{milliseconds}ms"
+
+    @staticmethod
     def generate_html_report(results):
         """Generate HTML report with detailed test steps"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Create ExtentReport directory if it doesn't exist
-        report_dir = os.path.join(Configuration.get_path("reports"), "ExtentReport")
+        # Backup previous reports
+        Configuration.backup_previous_reports()
+
+        report_dir = Configuration.get_path("extent_report")
         if not os.path.exists(report_dir):
             os.makedirs(report_dir)
 
         report_path = os.path.join(report_dir, f"TestReport_{timestamp}.html")
 
-        start_time = results[0]['timestamp'] if results else timestamp
-        end_time = results[-1]['timestamp'] if results else timestamp
-        duration = f"{(results[-1]['load_time'] - results[0]['load_time']) / 1000:.2f}s" if results else "0s"
+        # Generate content for each URL
+        url_details = []
+        for i, result in enumerate(results):
+            status_class = 'Pass' if result['status'] == 'Success' else 'Fatal'
+            url_name = result['url']
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Report</title>
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    margin: 0;
-                    padding: 20px;
-                    background-color: white;
-                }}
-                .header {{
-                    margin-bottom: 20px;
-                }}
-                .title {{
-                    font-size: 24px;
-                    color: #333;
-                    margin-bottom: 10px;
-                }}
-                .execution-info {{
-                    margin-bottom: 15px;
-                }}
-                .timestamp {{
-                    display: inline-block;
-                    padding: 5px 10px;
-                    color: white;
-                    border-radius: 3px;
-                    margin-right: 10px;
-                    font-size: 12px;
-                }}
-                .start-time {{
-                    background-color: #4CAF50;
-                }}
-                .end-time {{
-                    background-color: #2196F3;
-                }}
-                .duration {{
-                    color: #666;
-                    font-size: 12px;
-                }}
-                .details-table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                }}
-                .details-table th {{
-                    background-color: #f5f5f5;
-                    padding: 10px;
-                    text-align: left;
-                    border: 1px solid #ddd;
-                    font-weight: bold;
-                    color: #666;
-                }}
-                .details-table td {{
-                    padding: 10px;
-                    border: 1px solid #ddd;
-                }}
-                .status-badge {{
-                    display: inline-block;
-                    padding: 3px 8px;
-                    border-radius: 3px;
-                    font-size: 12px;
-                    color: white;
-                }}
-                .Fatal {{
-                    background-color: #d9534f;
-                }}
-                .Pass {{
-                    background-color: #5cb85c;
-                }}
-                .Fail {{
-                    background-color: #d9534f;
-                }}
-                .info-icon {{
-                    color: #2196F3;
-                    margin-right: 5px;
-                }}
-                .screenshot {{
-                    max-width: 800px;
-                    margin-top: 10px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <div class="title">Report</div>
-                <div class="execution-info">
-                    <span class="timestamp start-time">{start_time}</span>
-                    <span class="timestamp end-time">{end_time}</span>
-                    <span class="duration">Duration: {duration}</span>
-                </div>
-            </div>
+            # Create steps table
+            steps_content = f"""
+                <div class="url-content" id="content-{i}" style="display: none;">
+                    <div class="header-bar">
+                        <h2>{url_name}</h2>
+                        <div class="time-stamps">
+                            <span class="timestamp start">{result['timestamp']}</span>
+                            <span class="timestamp end">{datetime.now().strftime('%H:%M:%S')}</span>
+                            <span class="duration">{ReportHandler.get_duration(result['start_time'])}</span>
+                        </div>
+                        <div class="action-icons">
+                            <span class="icon info" onclick="showInfo(this)" title="Info">ⓘ</span>
+                            <span class="icon success" onclick="showSuccessInfo(this)" title="Success">✓</span>
+                            <span class="icon error" onclick="showErrorInfo(this)" title="Error">✕</span>
+                            <span class="icon warning" onclick="showWarningInfo(this)" title="Warning">⚠</span>
+                            <span class="icon sync" onclick="refreshContent()" title="Refresh">↻</span>
+                            <span class="icon close" onclick="closeContent()" title="Close">×</span>
+                        </div>
+                    </div>
+                    <table class="details-table">
+                        <thead>
+                            <tr>
+                                <th>STATUS</th>
+                                <th>TIMESTAMP</th>
+                                <th>DETAILS</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            """
 
-            <table class="details-table">
-                <thead>
-                    <tr>
-                        <th>STATUS</th>
-                        <th>TIMESTAMP</th>
-                        <th>DETAILS</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """
-
-        for result in results:
             for step in result['steps']:
-                status_class = {
+                step_status_class = {
                     'FATAL': 'Fatal',
                     'PASS': 'Pass',
                     'SUCCESS': 'Pass',
@@ -134,23 +86,495 @@ class ReportHandler:
                     'INFO': 'Pass'
                 }.get(step['status'], 'Pass')
 
-                html_content += f"""
+                steps_content += f"""
                     <tr>
                         <td>
-                            <span class="status-badge {status_class}">{step['status']}</span>
+                            <div class="status-container">
+                                <span class="info-icon" data-status="{step_status_class}" data-time="{step['timestamp']}">ⓘ</span>
+                                <div class="status-tooltip">
+                                    <div>Status: {step_status_class}</div>
+                                    <div>Time: {step['timestamp']}</div>
+                                </div>
+                            </div>
                         </td>
                         <td>{step['timestamp']}</td>
-                        <td>
-                            <span class="info-icon">ℹ</span>
-                            {step['message']}
-                            {f'<br><img src="{os.path.relpath(step["screenshot"], report_dir)}" class="screenshot"/>' if 'screenshot' in step else ''}
-                        </td>
+                        <td>{step['message']}</td>
                     </tr>
                 """
 
-        html_content += """
-                </tbody>
-            </table>
+            if result.get('screenshot'):
+                base64_image = ReportHandler.encode_image_to_base64(result['screenshot'])
+                if base64_image:
+                    steps_content += f"""
+                        <tr>
+                            <td colspan="3" class="screenshot-container">
+                                <button class="screenshot-btn" onclick="toggleScreenshot('screenshot-{i}')" id="btn-screenshot-{i}">
+                                    Show Screenshot
+                                </button>
+                                <div class="screenshot-wrapper" id="screenshot-{i}" style="display: none;">
+                                    <img src="{base64_image}" class="screenshot" alt="Screenshot" loading="lazy" />
+                                </div>
+                            </td>
+                        </tr>
+                    """
+
+            steps_content += """
+                        </tbody>
+                    </table>
+                </div>
+            """
+
+            url_details.append({
+                'index': i,
+                'url': url_name,
+                'status': status_class,
+                'content': steps_content
+            })
+
+        # Create the HTML content
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Test Results</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    height: 100vh;
+                    background-color: #f5f5f5;
+                }}
+
+                .left-panel {{
+                    width: 300px;
+                    background-color: #fff;
+                    border-right: 1px solid #ddd;
+                    overflow-y: auto;
+                    height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                }}
+
+                .left-panel-header {{
+                    padding: 20px;
+                    border-bottom: 1px solid #ddd;
+                    background-color: #f8f9fa;
+                }}
+
+                .left-panel-header h1 {{
+                    margin: 0;
+                    font-size: 18px;
+                    color: #666;
+                }}
+
+                .toolbar {{
+                    padding: 10px;
+                    border-bottom: 1px solid #ddd;
+                    display: flex;
+                    gap: 5px;
+                    background-color: #fff;
+                }}
+
+                .toolbar-icon {{
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 50%;
+                    background-color: #e0e0e0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    font-size: 16px;
+                }}
+
+                .toolbar-icon:hover {{
+                    background-color: #1976D2;
+                    color: white;
+                }}
+
+                .right-panel {{
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 20px;
+                    background-color: #fff;
+                }}
+
+                .url-list {{
+                    list-style: none;
+                    padding: 0;
+                    margin: 0;
+                    flex-grow: 1;
+                    overflow-y: auto;
+                }}
+
+                .url-item {{
+                    padding: 15px;
+                    border-bottom: 1px solid #ddd;
+                    cursor: pointer;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }}
+
+                .url-item:hover {{
+                    background-color: #f8f9fa;
+                }}
+
+                .url-item.active {{
+                    background-color: #e9ecef;
+                }}
+
+                .status-badge {{
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    color: white;
+                    font-weight: 500;
+                }}
+
+                .Pass {{
+                    background-color: #28a745;
+                }}
+
+                .Fatal {{
+                    background-color: #dc3545;
+                }}
+
+                .Fail {{
+                    background-color: #dc3545;
+                }}
+
+                .header-bar {{
+                    padding: 20px;
+                    border-bottom: 1px solid #ddd;
+                    background-color: #f8f9fa;
+                    margin-bottom: 20px;
+                    border-radius: 4px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: 15px;
+                }}
+
+                .time-stamps {{
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                }}
+
+                .timestamp {{
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: white;
+                }}
+
+                .timestamp.start {{
+                    background-color: #28a745;
+                }}
+
+                .timestamp.end {{
+                    background-color: #dc3545;
+                }}
+
+                .duration {{
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    background-color: #6c757d;
+                    color: white;
+                }}
+
+                .action-icons {{
+                    display: flex;
+                    gap: 5px;
+                }}
+
+                .icon {{
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    color: white;
+                }}
+
+                .icon:hover {{
+                    transform: scale(1.1);
+                }}
+
+                .icon.info {{ background-color: #17a2b8; }}
+                .icon.success {{ background-color: #28a745; }}
+                .icon.error {{ background-color: #dc3545; }}
+                .icon.warning {{ background-color: #ffc107; color: #000; }}
+                .icon.sync {{ background-color: #6c757d; }}
+                .icon.close {{ background-color: #6c757d; }}
+
+                .status-container {{
+                    position: relative;
+                    display: inline-block;
+                }}
+
+                .status-tooltip {{
+                    display: none;
+                    position: absolute;
+                    background-color: #333;
+                    color: white;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    z-index: 1000;
+                    white-space: nowrap;
+                    left: 100%;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    margin-left: 10px;
+                }}
+
+                .status-container:hover .status-tooltip {{
+                    display: block;
+                }}
+
+                .details-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 20px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }}
+
+                .details-table th {{
+                    padding: 12px 15px;
+                    text-align: left;
+                    background-color: #f8f9fa;
+                    color: #666;
+                    font-weight: 600;
+                    border-bottom: 2px solid #dee2e6;
+                }}
+
+                .details-table td {{
+                    padding: 12px 15px;
+                    border-bottom: 1px solid #dee2e6;
+                }}
+
+                .screenshot-container {{
+                    text-align: center;
+                    padding: 20px;
+                    background-color: #f8f9fa;
+                }}
+
+                .screenshot-btn {{
+                    background-color: #2196F3;
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: 500;
+                    transition: all 0.3s ease;
+                }}
+
+                .screenshot-btn.active {{
+                    background-color: #dc3545;
+                }}
+
+                .screenshot {{
+                    max-width: 100%;
+                    margin-top: 15px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                }}
+
+                .screenshot-wrapper {{
+                    display: none;
+                    margin-top: 15px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="left-panel">
+                <div class="left-panel-header">
+                    <h1>TESTS</h1>
+                </div>
+                <div class="toolbar">
+                    <div class="toolbar-icon" title="Toggle Menu">≡</div>
+                    <div class="toolbar-icon" title="Refresh">↺</div>
+                    <div class="toolbar-icon" title="Close Panel">×</div>
+                    <div class="toolbar-icon" title="Search">🔍</div>
+                </div>
+                <ul class="url-list">
+                    {"".join(f'''
+                        <li class="url-item" onclick="showContent({detail['index']})">
+                            <span>{detail['url']}</span>
+                            <span class="status-badge {detail['status']}">{detail['status']}</span>
+                        </li>
+                    ''' for detail in url_details)}
+                </ul>
+            </div>
+
+            <div class="right-panel">
+                {"".join(detail['content'] for detail in url_details)}
+            </div>
+
+            <script>
+                // Global variables to store counts
+                let successCount = 0;
+                let failCount = 0;
+                
+                // Function to update counts
+                function updateCount() {{
+                    successCount = document.querySelectorAll('.status-badge.Pass').length;
+                    failCount = document.querySelectorAll('.status-badge.Fatal, .status-badge.Fail').length;                    
+                }}
+                
+                function showContent(index) {{
+                    document.querySelectorAll('.url-content').forEach(content => {{
+                        content.style.display = 'none';
+                    }});
+
+                    document.querySelectorAll('.url-item').forEach(item => {{
+                        item.classList.remove('active');
+                    }});
+
+                    const selectedContent = document.getElementById(`content-${{index}}`);
+                    const selectedItem = document.querySelectorAll('.url-item')[index];
+
+                    if (selectedContent && selectedItem) {{
+                        selectedContent.style.display = 'block';
+                        selectedItem.classList.add('active');
+                    }}
+                }}
+
+                function toggleScreenshot(id) {{
+                    const screenshot = document.getElementById(id);
+                    const button = document.getElementById(`btn-${{id}}`);
+
+                    if (!screenshot || !button) return;
+
+                    const isHidden = screenshot.style.display === 'none';
+                    screenshot.style.display = isHidden ? 'block' : 'none';
+                    button.textContent = isHidden ? 'Hide Screenshot' : 'Show Screenshot';
+                    button.style.backgroundColor = isHidden ? '#dc3545' : '#2196F3';
+                    button.classList.toggle('active');
+                }}
+
+                function showInfo(element) {{
+                    updateCounts();
+                    const successCount = document.querySelectorAll('.status-badge.Pass').length;
+                    const failCount = document.querySelectorAll('.status-badge.Fatal, .status-badge.Fail').length;
+                    alert(`Test Summary:\\nPassed: ${{successCount}}\\nFailed: ${{failCount}}\\nTotal: ${{successCount + failCount}}`);
+                }}
+
+                function showSuccessInfo(element) {{
+                    const successCount = document.querySelectorAll('.status-badge.Pass').length;
+                    alert(`Passed Tests: ${{successCount}}`);
+                }}
+
+                function showErrorInfo(element) {{
+                    const failCount = document.querySelectorAll('.status-badge.Fatal, .status-badge.Fail').length;
+                    alert(`Failed Tests: ${{failCount}}`);
+                }}
+
+                function showWarningInfo(element) {{
+                    alert('No warnings at this time');
+                }}
+
+                function refreshContent() {{
+                    location.reload();
+                }}
+
+                function closeContent() {{
+                    const rightPanel = document.querySelector('.right-panel');
+                    if (rightPanel) {{
+                        rightPanel.style.display = rightPanel.style.display === 'none' ? 'block' : 'none';
+                    }}
+                }}
+
+                function searchUrls() {{
+                    const searchTerm = prompt('Enter search term:');
+                    if (searchTerm !== null && searchTerm.trim() !== '') {{
+                        const items = document.querySelectorAll('.url-item');
+                        let found = false;
+                        
+                        items.forEach(item => {{
+                            const text = item.textContent.toLowerCase();
+                            const search = searchTerm.toLowerCase().trim();
+                            
+                            if (text.includes(search)) {{
+                                item.style.display = 'flex';
+                                found = true;
+                            }} else {{
+                                item.style.display = 'none';
+                            }}
+                        }});
+                        
+                        if (!found) {{
+                            alert('No matching items found');
+                        }}
+                    }}
+                }}
+
+                // Initialize all functionality
+                document.addEventListener('DOMContentLoaded', function() {{
+                    // Menu toggle
+                    const menuToggle = document.querySelector('.toolbar-icon:nth-child(1)');
+                    if (menuToggle) {{
+                        menuToggle.onclick = function() {{
+                            const urlList = document.querySelector('.url-list');
+                            if (urlList) {{
+                                urlList.style.display = urlList.style.display === 'none' ? 'block' : 'none';
+                            }}
+                        }};
+                    }}
+
+                    // Refresh button
+                    const refreshButton = document.querySelector('.toolbar-icon:nth-child(2)');
+                    if (refreshButton) {{
+                        refreshButton.onclick = refreshContent;
+                    }}
+
+                    // Close panel button
+                    const closeButton = document.querySelector('.toolbar-icon:nth-child(3)');
+                    if (closeButton) {{
+                        closeButton.onclick = closeContent;
+                    }}
+
+                    // Search button
+                    const searchButton = document.querySelector('.toolbar-icon:nth-child(4)');
+                    if (searchButton) {{
+                        searchButton.onclick = searchUrls;
+                    }}
+
+                    // Initialize tooltips
+                    document.querySelectorAll('.status-container').forEach(container => {{
+                        container.addEventListener('mouseenter', function() {{
+                            const tooltip = this.querySelector('.status-tooltip');
+                            if (tooltip) {{
+                                tooltip.style.display = 'block';
+                            }}
+                        }});
+                        
+                        container.addEventListener('mouseleave', function() {{
+                            const tooltip = this.querySelector('.status-tooltip');
+                            if (tooltip) {{
+                                tooltip.style.display = 'none';
+                            }}
+                        }});
+                    }});
+
+                    // Show first URL content by default
+                    const urlItems = document.querySelectorAll('.url-item');
+                    if (urlItems.length > 0) {{
+                        showContent(0);
+                    }}
+                }});
+            </script>
         </body>
         </html>
         """

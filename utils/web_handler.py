@@ -3,7 +3,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 import allure
 import time
 import os
@@ -15,21 +14,45 @@ from .url_handler import URLHandler
 class WebDriverSetup:
     @staticmethod
     def create_driver():
-        """Creates a new instance of Chrome driver"""
+        """Creates a new instance of Chrome driver using manual path"""
         try:
             chrome_options = Options()
+            # Basic Chrome options
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--ignore-certificate-errors")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--remote-allow-origins=*")
             chrome_options.add_argument("--start-maximized")
 
-            service = Service(ChromeDriverManager().install())
+            # Additional stability options
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-software-rasterizer")
+            chrome_options.add_argument("--disable-extensions")
+            chrome_options.add_argument("--disable-popup-blocking")
+
+            # Get Chrome driver path from configuration
+            chrome_driver_path = Configuration.get_path("chrome_driver")
+
+            if not os.path.exists(chrome_driver_path):
+                raise FileNotFoundError(f"Chrome driver not found at: {chrome_driver_path}")
+
+            print(f"Using Chrome driver from: {chrome_driver_path}")
+
+            # Create service with manual path
+            service = Service(executable_path=chrome_driver_path)
+
+            # Create and configure driver
             driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.set_page_load_timeout(Configuration.get_config()["page_load_timeout"])
+
+            print("Chrome WebDriver initialized successfully")
             return driver
+
         except Exception as e:
+            error_msg = f"Error creating Chrome WebDriver: {str(e)}"
+            print(error_msg)
             allure.attach(
-                body=f"Error creating Chrome WebDriver: {str(e)}",
+                body=error_msg,
                 name="Driver Error",
                 attachment_type=allure.attachment_type.TEXT
             )
@@ -77,9 +100,19 @@ class WebAutomation:
                 os.makedirs(screenshots_dir)
 
             filepath = os.path.join(screenshots_dir, filename)
-            driver.save_screenshot(filepath)
 
-            print(f"Screenshot saved: {filepath}")
+            # Take screenshot with retry mechanism
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    driver.save_screenshot(filepath)
+                    print(f"Screenshot saved: {filepath}")
+                    break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    print(f"Screenshot attempt {attempt + 1} failed, retrying...")
+                    time.sleep(1)
 
             # Attach screenshot to Allure report
             allure.attach(
@@ -115,23 +148,34 @@ class WebAutomation:
         }
 
         try:
-            # Initial step
+            print(f"\nProcessing URL: {url}")
             result['steps'].append({
-                'status': 'SUCCESS',
-                'timestamp': datetime.now().strftime('%H:%M:%S'),
-                'message': f"Report will Run on Chrome Browser"
-            })
-
-            # Create new driver instance
-            driver = WebDriverSetup.create_driver()
-            result['steps'].append({
-                'status': 'SUCCESS',
+                'status': 'INFO',
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'message': f"Starting to process URL: {url}"
             })
 
+            # Create new driver instance with retry mechanism
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    driver = WebDriverSetup.create_driver()
+                    break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    print(f"Driver creation attempt {attempt + 1} failed, retrying...")
+                    time.sleep(2)
+
+            result['steps'].append({
+                'status': 'SUCCESS',
+                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                'message': "Chrome WebDriver initialized successfully"
+            })
+
             # Navigate to URL
             formatted_url = URLHandler.format_url(url)
+            print(f"Navigating to: {formatted_url}")
             driver.get(formatted_url)
 
             # Wait for page load
@@ -142,16 +186,16 @@ class WebAutomation:
                 result['steps'].append({
                     'status': 'SUCCESS',
                     'timestamp': datetime.now().strftime('%H:%M:%S'),
-                    'message': f"Page load completed in {load_time:.2f}ms"
+                    'message': f"Page loaded successfully in {load_time:.2f}ms"
                 })
 
                 # Take screenshot
                 screenshot_path = WebAutomation.save_screenshot(driver, url, row_number)
                 if screenshot_path:
                     result['steps'].append({
-                        'status': 'INFO',
+                        'status': 'SUCCESS',
                         'timestamp': datetime.now().strftime('%H:%M:%S'),
-                        'message': "Screenshot captured:",
+                        'message': "Screenshot captured successfully",
                         'screenshot': screenshot_path
                     })
 
@@ -170,17 +214,24 @@ class WebAutomation:
                 result['error'] = "Page load timeout"
 
         except Exception as e:
+            error_msg = str(e)
+            print(f"Error processing URL: {error_msg}")
             result['steps'].append({
                 'status': 'FATAL',
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
-                'message': f"Error: {str(e)}"
+                'message': f"Error: {error_msg}"
             })
-            result['error'] = str(e)
+            result['error'] = error_msg
 
         finally:
             if driver:
                 try:
                     driver.quit()
+                    result['steps'].append({
+                        'status': 'INFO',
+                        'timestamp': datetime.now().strftime('%H:%M:%S'),
+                        'message': "Browser closed successfully"
+                    })
                 except Exception as e:
                     result['steps'].append({
                         'status': 'FAIL',

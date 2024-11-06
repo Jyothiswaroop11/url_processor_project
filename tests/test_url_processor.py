@@ -2,6 +2,12 @@ import pytest
 import allure
 import os
 import time
+import sys
+
+# Add the project root directory to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
 from utils.config_handler import Configuration
 from utils.excel_handler import ExcelHandler
 from utils.url_handler import URLHandler
@@ -17,36 +23,45 @@ class TestURLProcessor:
     @allure.description("Test processing URLs from Excel file and capturing screenshots")
     def test_process_urls(self):
         try:
+            # Initialize Configuration and backup previous reports
             config = Configuration.get_config()
+            Configuration.ensure_directories()
+            Configuration.backup_previous_reports()
+
+            # Read Excel file
             excel_path = config["excel_path"]
             sheet_name = config["sheet_name"]
 
-            Configuration.ensure_directories()
+            print(f"\nReading Excel file: {excel_path}")
             rows = ExcelHandler.get_row_count(excel_path, sheet_name)
-            assert rows > 1, "No data found in Excel file"
+
+            if rows <= 1:
+                raise ValueError("No data found in Excel file")
 
             results = []
-            total_urls = rows - 1
+            total_urls = rows - 1  # Subtract header row
             print(f"\nTotal URLs to process: {total_urls}")
 
             # Process each URL
-            for r in range(2, rows + 1):
+            for r in range(2, rows + 1):  # Start from row 2 to skip header
                 url = ExcelHandler.read_data(excel_path, sheet_name, r, 1)
+
                 if not url:
                     print(f"Empty URL found in row {r}, skipping...")
                     continue
 
-                current_url_number = r - 1  # Calculate the current URL number
-                print(f"\nProcessing URL {current_url_number} of {total_urls}")
+                current_url_number = r - 1
+                print(f"\nProcessing URL {current_url_number} of {total_urls}: {url}")
+
                 with allure.step(f"Processing URL {current_url_number} of {total_urls}"):
-                    # Pass current_url_number instead of r
                     result = WebAutomation.process_url(url, current_url_number)
                     results.append(result)
 
                 # Wait between URLs
                 if r < rows:
-                    print("Waiting before next URL...")
-                    time.sleep(2)
+                    wait_time = config["wait_between_urls"]
+                    print(f"Waiting {wait_time} seconds before next URL...")
+                    time.sleep(wait_time)
 
             # Generate summary
             successful = sum(1 for r in results if r['status'] == 'Success')

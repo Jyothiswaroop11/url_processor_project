@@ -1,0 +1,7 @@
+{
+    "chrome_driver_path": "C:\\Users\\Jyothiswaroop\\OneDrive\\Desktop\\chromedriver-win32\\chromedriver.exe",
+    "page_load_timeout": 60,
+    "wait_between_urls": 2,
+    "max_retries": 2,
+    "retry_delay": 2
+}
