@@ -2,7 +2,6 @@ from urllib.parse import urlparse
 import re
 import allure
 
-
 class URLHandler:
     @staticmethod
     def is_ip_address(url):
@@ -28,18 +27,10 @@ class URLHandler:
     @staticmethod
     def get_clean_filename(url):
         """Convert URL to a clean filename"""
-        # Remove protocol and www
         clean_url = url.lower()
         clean_url = re.sub(r'https?://', '', clean_url)
         clean_url = re.sub(r'www\.', '', clean_url)
-
-        # Remove special characters and spaces
         clean_url = re.sub(r'[^a-z0-9]', '_', clean_url)
-
-        # Remove multiple underscores
         clean_url = re.sub(r'_+', '_', clean_url)
-
-        # Trim underscores from ends
         clean_url = clean_url.strip('_')
-
         return clean_url

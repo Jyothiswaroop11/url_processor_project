@@ -10,11 +10,10 @@ from datetime import datetime
 from .config_handler import Configuration
 from .url_handler import URLHandler
 
-
 class WebDriverSetup:
     @staticmethod
     def create_driver():
-        """Creates a new instance of Chrome driver using manual path"""
+        """Creates a new instance of Chrome driver"""
         try:
             chrome_options = Options()
             # Basic Chrome options
@@ -38,10 +37,7 @@ class WebDriverSetup:
 
             print(f"Using Chrome driver from: {chrome_driver_path}")
 
-            # Create service with manual path
             service = Service(executable_path=chrome_driver_path)
-
-            # Create and configure driver
             driver = webdriver.Chrome(service=service, options=chrome_options)
             driver.set_page_load_timeout(Configuration.get_config()["page_load_timeout"])
 
@@ -58,24 +54,18 @@ class WebDriverSetup:
             )
             raise
 
-
 class WebAutomation:
     @staticmethod
     def check_page_loaded(driver, timeout=30):
         """Checks if page is completely loaded"""
         try:
             print(f"Waiting for page to load (timeout: {timeout}s)...")
-
-            # Wait for document.readyState to be complete
             WebDriverWait(driver, timeout).until(
                 lambda d: d.execute_script("return document.readyState") == "complete"
             )
-
-            # Additional wait for dynamic content
             time.sleep(2)
             print("Page load complete")
             return True
-
         except Exception as e:
             print(f"Error during page load: {str(e)}")
             allure.attach(
@@ -89,19 +79,16 @@ class WebAutomation:
     def save_screenshot(driver, url, row_number):
         """Takes and saves screenshot with URL name"""
         try:
-            # Extract clean filename from URL
             url_name = URLHandler.get_clean_filename(url)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{url_name}_{timestamp}.png"
 
-            # Ensure screenshots directory exists
             screenshots_dir = Configuration.get_path("screenshots")
             if not os.path.exists(screenshots_dir):
                 os.makedirs(screenshots_dir)
 
             filepath = os.path.join(screenshots_dir, filename)
 
-            # Take screenshot with retry mechanism
             max_retries = 3
             for attempt in range(max_retries):
                 try:
@@ -114,7 +101,6 @@ class WebAutomation:
                     print(f"Screenshot attempt {attempt + 1} failed, retrying...")
                     time.sleep(1)
 
-            # Attach screenshot to Allure report
             allure.attach(
                 body=driver.get_screenshot_as_png(),
                 name=f"Screenshot_{url_name}",
@@ -155,7 +141,6 @@ class WebAutomation:
                 'message': f"Starting to process URL: {url}"
             })
 
-            # Create new driver instance with retry mechanism
             max_retries = 3
             for attempt in range(max_retries):
                 try:

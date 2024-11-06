@@ -1,14 +1,19 @@
 import os
 import base64
 import time
+import json
 from datetime import datetime
 from .config_handler import Configuration
 
 
 class ReportHandler:
+    """
+    Handles the generation and formatting of test reports including screenshots and metrics.
+    """
+
     @staticmethod
     def encode_image_to_base64(image_path):
-        """Convert image to base64 string"""
+        """Convert image file to base64 string for embedding in HTML."""
         try:
             with open(image_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
@@ -19,567 +24,711 @@ class ReportHandler:
 
     @staticmethod
     def get_duration(start_time):
-        """Calculate duration in human-readable format"""
+        """Calculate duration in human-readable format from start time."""
         duration = time.time() - start_time
         hours = int(duration // 3600)
         minutes = int((duration % 3600) // 60)
         seconds = int(duration % 60)
-        milliseconds = int((duration * 1000) % 1000)
-        return f"{hours}h {minutes}m {seconds}s+{milliseconds}ms"
+        milliseconds = int((duration % 1) * 1000)  # Convert fraction to milliseconds
+        return f"{hours}h {minutes}m {seconds}s+{milliseconds:03d}ms"
+
+    @staticmethod
+    def calculate_stats(results):
+        """Calculate test statistics from results."""
+        total = len(results)
+        passed = sum(1 for r in results if r['status'] == 'Success')
+        failed = total - passed
+        pass_rate = (passed / total * 100) if total > 0 else 0
+
+        total_duration = sum(
+            result.get('load_time', 0) for result in results
+        )
+
+        return {
+            'total': total,
+            'passed': passed,
+            'failed': failed,
+            'pass_rate': pass_rate,
+            'total_duration': total_duration
+        }
+
+    @staticmethod
+    def format_duration(ms):
+        """Format milliseconds to readable duration string."""
+        total_seconds = ms / 1000
+        hours = int(total_seconds // 3600)
+        minutes = int((total_seconds % 3600) // 60)
+        seconds = int(total_seconds % 60)
+        milliseconds = int((ms % 1000))  # Get remaining milliseconds
+        return f"{hours}h {minutes}m {seconds}s+{milliseconds:03d}ms"
+
+    @staticmethod
+    def get_styles():
+        """Define CSS styles for HTML report."""
+        return """
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+
+            body { 
+                font-family: 'Inter', sans-serif;
+                line-height: 1.6;
+                background: #f8f9fa;
+                color: #333;
+            }
+
+            .layout {
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+            }
+
+            /* Top Stats Bar */
+            .stats-bar {
+                display: flex;
+                justify-content: space-evenly;
+                background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+                padding: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+
+            .stat-item {
+                text-align: center;
+                padding: 10px 25px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                backdrop-filter: blur(5px);
+                transition: transform 0.3s ease;
+            }
+
+            .stat-item:hover {
+                transform: translateY(-2px);
+            }
+
+            .stat-label {
+                font-size: 0.8rem;
+                color: #fff;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+
+            .stat-value {
+                font-size: 1.5rem;
+                font-weight: 700;
+                margin-top: 5px;
+                color: #fff;
+            }
+
+            /* Main Content */
+            .content-wrapper {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+            }
+
+            /* Left Panel */
+            .left-panel {
+                width: 300px;
+                background: white;
+                border-right: 1px solid #ddd;
+                display: flex;
+                flex-direction: column;
+            }
+
+            /* Filter Section */
+            .filter-bar {
+                padding: 10px;
+                border-bottom: 1px solid #ddd;
+                background: #f8f9fa;
+            }
+
+            .filter-controls {
+                display: flex;
+                gap: 5px;
+                margin-bottom: 8px;
+            }
+
+            .filter-input {
+                flex: 1;
+                padding: 6px 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 0.8rem;
+            }
+
+            .filter-button {
+                padding: 6px 12px;
+                border: none;
+                border-radius: 4px;
+                background: #2193b0;
+                color: white;
+                cursor: pointer;
+                font-size: 0.8rem;
+            }
+
+            .filter-button:hover {
+                background: #1a7b93;
+            }
+
+            /* URL List */
+            .url-list {
+                list-style: none;
+                overflow-y: auto;
+                flex: 1;
+            }
+
+            .url-item {
+                padding: 10px 15px;
+                border-bottom: 1px solid #eee;
+                cursor: pointer;
+            }
+
+            .url-item:hover {
+                background: #f5f5f5;
+            }
+
+            .url-item.active {
+                background: #e3f2fd;
+                border-left: 3px solid #2193b0;
+            }
+
+            .url-item-content {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+            
+            .url-header {
+                font-size: 0.85rem;
+                color: #666;
+                font-weight: 600;
+            }
+
+            .url-name {
+                font-size: 0.9rem;
+                word-break: break-all;
+                margin-bottom: 5px;
+            }
+
+            /* Right Panel */
+            .right-panel {
+                flex: 1;
+                padding: 20px;
+                overflow-y: auto;
+            }
+
+            .url-content {
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+
+            /* Status Badges */
+            .status-badge {
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 0.7rem;
+                font-weight: 600;
+                text-transform: uppercase;
+            }
+            
+            .status-badge-container {
+                display: flex;
+                justify-content: flex-end;
+            }
+
+            .status-badge.pass { 
+                background: #e8f5e9; 
+                color: #2e7d32;
+            }
+
+            .status-badge.fail { 
+                background: #ffebee; 
+                color: #c62828;
+            }
+
+            .status-badge.info { 
+                background: #e3f2fd; 
+                color: #1976d2;
+            }
+
+            /* Time Info */
+            .time-info {
+                display: flex;
+                gap: 10px;
+                margin: 15px 0;
+            }
+
+            .time-badge {
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-size: 0.8rem;
+            }
+
+            .time-badge.start {
+                background: #e8f5e9;
+                color: #2e7d32;
+            }
+
+            .time-badge.end {
+                background: #ffebee;
+                color: #c62828;
+            }
+
+            .time-badge.duration {
+                background: #f5f5f5;
+                color: #333;
+            }
+
+            /* Screenshot Controls */
+            .control-buttons {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 15px;
+            }
+
+            .control-button {
+                padding: 8px 15px;
+                border: none;
+                border-radius: 4px;
+                font-size: 0.8rem;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                transition: all 0.3s ease;
+            }
+
+            .control-button.screenshot-btn {
+                background: #2193b0;
+                color: white;
+            }
+
+            .control-button.screenshot-btn.active {
+                background: #dc3545;
+            }
+
+            .control-button.screenshot-btn:hover {
+                opacity: 0.9;
+            }
+
+            .control-button.secondary {
+                background: #e3f2fd;
+                color: #1976d2;
+            }
+
+            .control-button.secondary:hover {
+                background: #bbdefb;
+            }
+
+            /* Screenshot Container */
+            .screenshot-container {
+                display: none;
+                background: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin-top: 10px;
+            }
+
+            .screenshot-container.visible {
+                display: block;
+            }
+
+            .screenshot {
+                width: 100%;
+                height: auto;
+                border-radius: 4px;
+            }
+
+            /* Steps Table */
+            .steps-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 15px 0;
+            }
+
+            .steps-table th,
+            .steps-table td {
+                padding: 12px;
+                text-align: left;
+                border-bottom: 1px solid #eee;
+            }
+
+            .steps-table th {
+                background: #1e3c72;
+                color: white;
+                font-weight: 500;
+                font-size: 0.9rem;
+            }
+
+            .steps-table tr:hover {
+                background-color: #f8f9fa;
+            }
+        """
+
+    @staticmethod
+    def get_scripts():
+        """Define JavaScript functionality for the report."""
+        return """
+            // Advanced Filtering
+            function applyFilters() {
+                const searchText = document.getElementById('urlSearch').value.toLowerCase();
+                const statusFilter = document.getElementById('statusFilter').value.toLowerCase();
+
+                document.querySelectorAll('.url-item').forEach(item => {
+                    const url = item.querySelector('.url-name').textContent.toLowerCase();
+                    const statusElement = item.querySelector('.status-badge');
+                    const status = statusElement.textContent.trim().toLowerCase();
+
+                    let matchesSearch = url.includes(searchText);
+                    let matchesStatus = true;
+
+                    if (statusFilter !== 'all') {
+                        matchesStatus = status === statusFilter;
+                    }
+
+                    item.style.display = matchesSearch && matchesStatus ? 'block' : 'none';
+                });
+            }
+
+            function resetFilters() {
+                document.getElementById('urlSearch').value = '';
+                document.getElementById('statusFilter').value = 'all';
+                document.querySelectorAll('.url-item').forEach(item => {
+                    item.style.display = 'block';
+                });
+            }
+
+            function refreshList() {
+                location.reload();
+            }
+
+            function showContent(index) {
+                document.querySelectorAll('.url-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+
+                document.getElementById(`content-${index}`).style.display = 'block';
+
+                document.querySelectorAll('.url-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+
+                const selectedItem = document.querySelector(`[onclick="showContent(${index})"]`);
+                if (selectedItem) {
+                    selectedItem.classList.add('active');
+                }
+            }
+
+            function toggleScreenshot(index) {
+                const container = document.getElementById(`screenshot-container-${index}`);
+                const btn = document.getElementById(`screenshot-btn-${index}`);
+
+                if (container.classList.contains('visible')) {
+                    container.classList.remove('visible');
+                    btn.innerHTML = '<i class="fas fa-image"></i> Show Screenshot';
+                    btn.classList.remove('active');
+                } else {
+                    container.classList.add('visible');
+                    btn.innerHTML = '<i class="fas fa-times"></i> Hide Screenshot';
+                    btn.classList.add('active');
+                }
+            }
+
+            // Initialize
+            window.onload = function() {
+                const firstItem = document.querySelector('.url-item');
+                if (firstItem) {
+                    firstItem.click();
+                }
+            };
+
+            // Test Data Viewer
+            function showTestData(index) {
+                const dataWindow = window.open('', '_blank', 'width=800,height=600');
+                const data = document.getElementById(`test-data-${index}`).textContent;
+
+                dataWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>Test Data</title>
+                        <style>
+                            body {
+                                font-family: 'Inter', sans-serif;
+                                padding: 20px;
+                                margin: 0;
+                                background: #f8f9fa;
+                            }
+                            pre {
+                                background: white;
+                                padding: 20px;
+                                border-radius: 8px;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                                overflow: auto;
+                                margin: 0;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <pre><code>${JSON.stringify(JSON.parse(data), null, 2)}</code></pre>
+                    </body>
+                    </html>
+                `);
+            }
+        """
+
+    @staticmethod
+    def generate_content_section(result, index):
+        """Generate HTML content for a single test result."""
+        content = f"""
+            <div id="content-{index}" class="url-content" style="display: none;">
+                <h2>{result['url']}</h2>
+
+                <div class="time-info">
+                    <span class="time-badge start">Start: {result['timestamp']}</span>
+                    <span class="time-badge end">End: {datetime.now().strftime('%H:%M:%S')}</span>
+                    <span class="time-badge duration">
+                        Duration: {ReportHandler.get_duration(result['start_time'])}
+                    </span>
+                </div>
+
+                <table class="steps-table">
+                    <thead>
+                        <tr>
+                            <th width="15%">Status</th>
+                            <th width="20%">Timestamp</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """
+
+        for step in result['steps']:
+            step_status = {
+                'FATAL': 'fail',
+                'PASS': 'pass',
+                'SUCCESS': 'pass',
+                'FAIL': 'fail',
+                'INFO': 'info'
+            }.get(step['status'], 'info')
+
+            content += f"""
+                <tr>
+                    <td>
+                        <span class="status-badge {step_status.lower()}">
+                            {step_status.upper()}
+                        </span>
+                    </td>
+                    <td>{step['timestamp']}</td>
+                    <td>{step['message']}</td>
+                </tr>
+            """
+
+        content += """
+                    </tbody>
+                </table>
+        """
+
+        if result.get('screenshot'):
+            base64_image = ReportHandler.encode_image_to_base64(result['screenshot'])
+            if base64_image:
+                content += f"""
+                    <div class="control-buttons">
+                        <button id="screenshot-btn-{index}" 
+                                class="control-button screenshot-btn"
+                                onclick="toggleScreenshot({index})">
+                            <i class="fas fa-image"></i> Show Screenshot
+                        </button>
+                        <button class="control-button secondary"
+                                onclick="showTestData({index})">
+                            <i class="fas fa-code"></i> View Test Data
+                        </button>
+                    </div>
+                    <div id="screenshot-container-{index}" class="screenshot-container">
+                        <img src="{base64_image}" 
+                             class="screenshot"
+                             alt="Test Screenshot"
+                             loading="lazy" />
+                    </div>
+                    <div id="test-data-{index}" style="display: none">
+                        {json.dumps(result)}
+                    </div>
+                """
+
+        content += "</div>"
+        return content
 
     @staticmethod
     def generate_html_report(results):
-        """Generate HTML report with detailed test steps"""
+        """Generate complete HTML report from test results."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Backup previous reports
+        # Setup directories
         Configuration.backup_previous_reports()
-
         report_dir = Configuration.get_path("extent_report")
         if not os.path.exists(report_dir):
             os.makedirs(report_dir)
 
         report_path = os.path.join(report_dir, f"TestReport_{timestamp}.html")
+        stats = ReportHandler.calculate_stats(results)
 
-        # Generate content for each URL
-        url_details = []
-        for i, result in enumerate(results):
-            status_class = 'Pass' if result['status'] == 'Success' else 'Fatal'
-            url_name = result['url']
-
-            # Create steps table
-            steps_content = f"""
-                <div class="url-content" id="content-{i}" style="display: none;">
-                    <div class="header-bar">
-                        <h2>{url_name}</h2>
-                        <div class="time-stamps">
-                            <span class="timestamp start">{result['timestamp']}</span>
-                            <span class="timestamp end">{datetime.now().strftime('%H:%M:%S')}</span>
-                            <span class="duration">{ReportHandler.get_duration(result['start_time'])}</span>
-                        </div>
-                        <div class="action-icons">
-                            <span class="icon info" onclick="showInfo(this)" title="Info">ⓘ</span>
-                            <span class="icon success" onclick="showSuccessInfo(this)" title="Success">✓</span>
-                            <span class="icon error" onclick="showErrorInfo(this)" title="Error">✕</span>
-                            <span class="icon warning" onclick="showWarningInfo(this)" title="Warning">⚠</span>
-                            <span class="icon sync" onclick="refreshContent()" title="Refresh">↻</span>
-                            <span class="icon close" onclick="closeContent()" title="Close">×</span>
-                        </div>
-                    </div>
-                    <table class="details-table">
-                        <thead>
-                            <tr>
-                                <th>STATUS</th>
-                                <th>TIMESTAMP</th>
-                                <th>DETAILS</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            """
-
-            for step in result['steps']:
-                step_status_class = {
-                    'FATAL': 'Fatal',
-                    'PASS': 'Pass',
-                    'SUCCESS': 'Pass',
-                    'FAIL': 'Fail',
-                    'INFO': 'Pass'
-                }.get(step['status'], 'Pass')
-
-                steps_content += f"""
-                    <tr>
-                        <td>
-                            <div class="status-container">
-                                <span class="info-icon" data-status="{step_status_class}" data-time="{step['timestamp']}">ⓘ</span>
-                                <div class="status-tooltip">
-                                    <div>Status: {step_status_class}</div>
-                                    <div>Time: {step['timestamp']}</div>
+        url_list_items = '''
+                    '''.join(f'''
+                        <li class="url-item" onclick="showContent({i})">
+                            <div class="url-item-content">
+                                <div>
+                                    <span class="url-header">Validating URL: </span>
+                                    <span class="url-name">{result['url']}</span>
+                                </div>
+                                <div class="status-badge-container">
+                                    <span class="status-badge {
+        'pass' if result['status'] == 'Success' else 'fail'
+        }">
+                                        {'pass' if result['status'] == 'Success' else 'fail'}
+                                    </span>
                                 </div>
                             </div>
-                        </td>
-                        <td>{step['timestamp']}</td>
-                        <td>{step['message']}</td>
-                    </tr>
-                """
+                        </li>
+                    ''' for i, result in enumerate(results))
 
-            if result.get('screenshot'):
-                base64_image = ReportHandler.encode_image_to_base64(result['screenshot'])
-                if base64_image:
-                    steps_content += f"""
-                        <tr>
-                            <td colspan="3" class="screenshot-container">
-                                <button class="screenshot-btn" onclick="toggleScreenshot('screenshot-{i}')" id="btn-screenshot-{i}">
-                                    Show Screenshot
-                                </button>
-                                <div class="screenshot-wrapper" id="screenshot-{i}" style="display: none;">
-                                    <img src="{base64_image}" class="screenshot" alt="Screenshot" loading="lazy" />
+        # Generate HTML content
+        html_content = f"""
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Test Results - {timestamp}</title>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+                    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+                    <style>{ReportHandler.get_styles()}</style>
+                </head>
+                <body>
+                    <div class="layout">
+                        <!-- Stats Bar -->
+                        <div class="stats-bar">
+                            <div class="stat-item">
+                                <div class="stat-label">Total Tests</div>
+                                <div class="stat-value">{stats['total']}</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Passed</div>
+                                <div class="stat-value">{stats['passed']}</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Failed</div>
+                                <div class="stat-value">{stats['failed']}</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Pass Rate</div>
+                                <div class="stat-value">{stats['pass_rate']:.1f}%</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Duration</div>
+                                <div class="stat-value">{ReportHandler.format_duration(stats['total_duration'])}</div>
+                            </div>
+                        </div>
+
+                        <!-- Main Content -->
+                        <div class="content-wrapper">
+                            <!-- Left Panel -->
+                            <div class="left-panel">
+                                <div class="filter-bar">
+                                    <div class="filter-controls">
+                                        <input type="text" 
+                                               id="urlSearch" 
+                                               class="filter-input" 
+                                               placeholder="Search URLs..."
+                                               oninput="applyFilters()">
+                                        <button class="filter-button" 
+                                                onclick="refreshList()" 
+                                                title="Refresh List">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
+                                    </div>
+                                    <div class="filter-controls">
+                                        <select id="statusFilter" 
+                                                class="filter-input" 
+                                                onchange="applyFilters()">
+                                            <option value="all">All Status</option>
+                                            <option value="pass">Passed</option>
+                                            <option value="fail">Failed</option>
+                                        </select>
+                                        <button class="filter-button" 
+                                                onclick="resetFilters()" 
+                                                title="Clear Filters">
+                                            <i class="fas fa-times"></i> Clear
+                                        </button>
+                                    </div>
                                 </div>
-                            </td>
-                        </tr>
-                    """
 
-            steps_content += """
-                        </tbody>
-                    </table>
-                </div>
+                                <ul class="url-list">
+                                    {url_list_items}
+                                </ul>
+                            </div>
+
+                            <!-- Right Panel -->
+                            <div class="right-panel">
+                                {'''
+                                '''.join(ReportHandler.generate_content_section(result, i)
+                                         for i, result in enumerate(results))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>{ReportHandler.get_scripts()}</script>
+                </body>
+                </html>
             """
 
-            url_details.append({
-                'index': i,
-                'url': url_name,
-                'status': status_class,
-                'content': steps_content
-            })
-
-        # Create the HTML content
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Test Results</title>
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    margin: 0;
-                    padding: 0;
-                    display: flex;
-                    height: 100vh;
-                    background-color: #f5f5f5;
-                }}
-
-                .left-panel {{
-                    width: 300px;
-                    background-color: #fff;
-                    border-right: 1px solid #ddd;
-                    overflow-y: auto;
-                    height: 100vh;
-                    display: flex;
-                    flex-direction: column;
-                }}
-
-                .left-panel-header {{
-                    padding: 20px;
-                    border-bottom: 1px solid #ddd;
-                    background-color: #f8f9fa;
-                }}
-
-                .left-panel-header h1 {{
-                    margin: 0;
-                    font-size: 18px;
-                    color: #666;
-                }}
-
-                .toolbar {{
-                    padding: 10px;
-                    border-bottom: 1px solid #ddd;
-                    display: flex;
-                    gap: 5px;
-                    background-color: #fff;
-                }}
-
-                .toolbar-icon {{
-                    width: 30px;
-                    height: 30px;
-                    border-radius: 50%;
-                    background-color: #e0e0e0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    font-size: 16px;
-                }}
-
-                .toolbar-icon:hover {{
-                    background-color: #1976D2;
-                    color: white;
-                }}
-
-                .right-panel {{
-                    flex: 1;
-                    overflow-y: auto;
-                    padding: 20px;
-                    background-color: #fff;
-                }}
-
-                .url-list {{
-                    list-style: none;
-                    padding: 0;
-                    margin: 0;
-                    flex-grow: 1;
-                    overflow-y: auto;
-                }}
-
-                .url-item {{
-                    padding: 15px;
-                    border-bottom: 1px solid #ddd;
-                    cursor: pointer;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }}
-
-                .url-item:hover {{
-                    background-color: #f8f9fa;
-                }}
-
-                .url-item.active {{
-                    background-color: #e9ecef;
-                }}
-
-                .status-badge {{
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    color: white;
-                    font-weight: 500;
-                }}
-
-                .Pass {{
-                    background-color: #28a745;
-                }}
-
-                .Fatal {{
-                    background-color: #dc3545;
-                }}
-
-                .Fail {{
-                    background-color: #dc3545;
-                }}
-
-                .header-bar {{
-                    padding: 20px;
-                    border-bottom: 1px solid #ddd;
-                    background-color: #f8f9fa;
-                    margin-bottom: 20px;
-                    border-radius: 4px;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    flex-wrap: wrap;
-                    gap: 15px;
-                }}
-
-                .time-stamps {{
-                    display: flex;
-                    gap: 10px;
-                    align-items: center;
-                }}
-
-                .timestamp {{
-                    padding: 6px 12px;
-                    border-radius: 4px;
-                    font-size: 13px;
-                    font-weight: 500;
-                    color: white;
-                }}
-
-                .timestamp.start {{
-                    background-color: #28a745;
-                }}
-
-                .timestamp.end {{
-                    background-color: #dc3545;
-                }}
-
-                .duration {{
-                    padding: 6px 12px;
-                    border-radius: 4px;
-                    font-size: 13px;
-                    background-color: #6c757d;
-                    color: white;
-                }}
-
-                .action-icons {{
-                    display: flex;
-                    gap: 5px;
-                }}
-
-                .icon {{
-                    width: 30px;
-                    height: 30px;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    color: white;
-                }}
-
-                .icon:hover {{
-                    transform: scale(1.1);
-                }}
-
-                .icon.info {{ background-color: #17a2b8; }}
-                .icon.success {{ background-color: #28a745; }}
-                .icon.error {{ background-color: #dc3545; }}
-                .icon.warning {{ background-color: #ffc107; color: #000; }}
-                .icon.sync {{ background-color: #6c757d; }}
-                .icon.close {{ background-color: #6c757d; }}
-
-                .status-container {{
-                    position: relative;
-                    display: inline-block;
-                }}
-
-                .status-tooltip {{
-                    display: none;
-                    position: absolute;
-                    background-color: #333;
-                    color: white;
-                    padding: 8px 12px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    z-index: 1000;
-                    white-space: nowrap;
-                    left: 100%;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    margin-left: 10px;
-                }}
-
-                .status-container:hover .status-tooltip {{
-                    display: block;
-                }}
-
-                .details-table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-top: 20px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }}
-
-                .details-table th {{
-                    padding: 12px 15px;
-                    text-align: left;
-                    background-color: #f8f9fa;
-                    color: #666;
-                    font-weight: 600;
-                    border-bottom: 2px solid #dee2e6;
-                }}
-
-                .details-table td {{
-                    padding: 12px 15px;
-                    border-bottom: 1px solid #dee2e6;
-                }}
-
-                .screenshot-container {{
-                    text-align: center;
-                    padding: 20px;
-                    background-color: #f8f9fa;
-                }}
-
-                .screenshot-btn {{
-                    background-color: #2196F3;
-                    color: white;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    font-weight: 500;
-                    transition: all 0.3s ease;
-                }}
-
-                .screenshot-btn.active {{
-                    background-color: #dc3545;
-                }}
-
-                .screenshot {{
-                    max-width: 100%;
-                    margin-top: 15px;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                }}
-
-                .screenshot-wrapper {{
-                    display: none;
-                    margin-top: 15px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="left-panel">
-                <div class="left-panel-header">
-                    <h1>TESTS</h1>
-                </div>
-                <div class="toolbar">
-                    <div class="toolbar-icon" title="Toggle Menu">≡</div>
-                    <div class="toolbar-icon" title="Refresh">↺</div>
-                    <div class="toolbar-icon" title="Close Panel">×</div>
-                    <div class="toolbar-icon" title="Search">🔍</div>
-                </div>
-                <ul class="url-list">
-                    {"".join(f'''
-                        <li class="url-item" onclick="showContent({detail['index']})">
-                            <span>{detail['url']}</span>
-                            <span class="status-badge {detail['status']}">{detail['status']}</span>
-                        </li>
-                    ''' for detail in url_details)}
-                </ul>
-            </div>
-
-            <div class="right-panel">
-                {"".join(detail['content'] for detail in url_details)}
-            </div>
-
-            <script>
-                // Global variables to store counts
-                let successCount = 0;
-                let failCount = 0;
-                
-                // Function to update counts
-                function updateCount() {{
-                    successCount = document.querySelectorAll('.status-badge.Pass').length;
-                    failCount = document.querySelectorAll('.status-badge.Fatal, .status-badge.Fail').length;                    
-                }}
-                
-                function showContent(index) {{
-                    document.querySelectorAll('.url-content').forEach(content => {{
-                        content.style.display = 'none';
-                    }});
-
-                    document.querySelectorAll('.url-item').forEach(item => {{
-                        item.classList.remove('active');
-                    }});
-
-                    const selectedContent = document.getElementById(`content-${{index}}`);
-                    const selectedItem = document.querySelectorAll('.url-item')[index];
-
-                    if (selectedContent && selectedItem) {{
-                        selectedContent.style.display = 'block';
-                        selectedItem.classList.add('active');
-                    }}
-                }}
-
-                function toggleScreenshot(id) {{
-                    const screenshot = document.getElementById(id);
-                    const button = document.getElementById(`btn-${{id}}`);
-
-                    if (!screenshot || !button) return;
-
-                    const isHidden = screenshot.style.display === 'none';
-                    screenshot.style.display = isHidden ? 'block' : 'none';
-                    button.textContent = isHidden ? 'Hide Screenshot' : 'Show Screenshot';
-                    button.style.backgroundColor = isHidden ? '#dc3545' : '#2196F3';
-                    button.classList.toggle('active');
-                }}
-
-                function showInfo(element) {{
-                    updateCounts();
-                    const successCount = document.querySelectorAll('.status-badge.Pass').length;
-                    const failCount = document.querySelectorAll('.status-badge.Fatal, .status-badge.Fail').length;
-                    alert(`Test Summary:\\nPassed: ${{successCount}}\\nFailed: ${{failCount}}\\nTotal: ${{successCount + failCount}}`);
-                }}
-
-                function showSuccessInfo(element) {{
-                    const successCount = document.querySelectorAll('.status-badge.Pass').length;
-                    alert(`Passed Tests: ${{successCount}}`);
-                }}
-
-                function showErrorInfo(element) {{
-                    const failCount = document.querySelectorAll('.status-badge.Fatal, .status-badge.Fail').length;
-                    alert(`Failed Tests: ${{failCount}}`);
-                }}
-
-                function showWarningInfo(element) {{
-                    alert('No warnings at this time');
-                }}
-
-                function refreshContent() {{
-                    location.reload();
-                }}
-
-                function closeContent() {{
-                    const rightPanel = document.querySelector('.right-panel');
-                    if (rightPanel) {{
-                        rightPanel.style.display = rightPanel.style.display === 'none' ? 'block' : 'none';
-                    }}
-                }}
-
-                function searchUrls() {{
-                    const searchTerm = prompt('Enter search term:');
-                    if (searchTerm !== null && searchTerm.trim() !== '') {{
-                        const items = document.querySelectorAll('.url-item');
-                        let found = false;
-                        
-                        items.forEach(item => {{
-                            const text = item.textContent.toLowerCase();
-                            const search = searchTerm.toLowerCase().trim();
-                            
-                            if (text.includes(search)) {{
-                                item.style.display = 'flex';
-                                found = true;
-                            }} else {{
-                                item.style.display = 'none';
-                            }}
-                        }});
-                        
-                        if (!found) {{
-                            alert('No matching items found');
-                        }}
-                    }}
-                }}
-
-                // Initialize all functionality
-                document.addEventListener('DOMContentLoaded', function() {{
-                    // Menu toggle
-                    const menuToggle = document.querySelector('.toolbar-icon:nth-child(1)');
-                    if (menuToggle) {{
-                        menuToggle.onclick = function() {{
-                            const urlList = document.querySelector('.url-list');
-                            if (urlList) {{
-                                urlList.style.display = urlList.style.display === 'none' ? 'block' : 'none';
-                            }}
-                        }};
-                    }}
-
-                    // Refresh button
-                    const refreshButton = document.querySelector('.toolbar-icon:nth-child(2)');
-                    if (refreshButton) {{
-                        refreshButton.onclick = refreshContent;
-                    }}
-
-                    // Close panel button
-                    const closeButton = document.querySelector('.toolbar-icon:nth-child(3)');
-                    if (closeButton) {{
-                        closeButton.onclick = closeContent;
-                    }}
-
-                    // Search button
-                    const searchButton = document.querySelector('.toolbar-icon:nth-child(4)');
-                    if (searchButton) {{
-                        searchButton.onclick = searchUrls;
-                    }}
-
-                    // Initialize tooltips
-                    document.querySelectorAll('.status-container').forEach(container => {{
-                        container.addEventListener('mouseenter', function() {{
-                            const tooltip = this.querySelector('.status-tooltip');
-                            if (tooltip) {{
-                                tooltip.style.display = 'block';
-                            }}
-                        }});
-                        
-                        container.addEventListener('mouseleave', function() {{
-                            const tooltip = this.querySelector('.status-tooltip');
-                            if (tooltip) {{
-                                tooltip.style.display = 'none';
-                            }}
-                        }});
-                    }});
-
-                    // Show first URL content by default
-                    const urlItems = document.querySelectorAll('.url-item');
-                    if (urlItems.length > 0) {{
-                        showContent(0);
-                    }}
-                }});
-            </script>
-        </body>
-        </html>
-        """
-
+        # Write report to file
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
 
         return report_path
+
+    @staticmethod
+    def create_data_viewer_html(data):
+        """Create HTML for the data viewer popup."""
+        return f"""
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Test Data Viewer</title>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+                    <style>
+                        body {{
+                            font-family: 'Inter', sans-serif;
+                            line-height: 1.6;
+                            padding: 20px;
+                            background: #f8f9fa;
+                            margin: 0;
+                        }}
+
+                        .data-container {{
+                            background: white;
+                            padding: 20px;
+                            border-radius: 8px;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }}
+
+                        pre {{
+                            margin: 0;
+                            white-space: pre-wrap;
+                            word-wrap: break-word;
+                            font-family: 'Consolas', monospace;
+                            font-size: 14px;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="data-container">
+                        <pre><code>{json.dumps(data, indent=2)}</code></pre>
+                    </div>
+                </body>
+                </html>
+            """

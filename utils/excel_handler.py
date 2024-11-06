@@ -37,12 +37,3 @@ class ExcelHandler:
         workbook = ExcelHandler.load_workbook(file)
         sheet = ExcelHandler.get_sheet(workbook, sheet_name)
         return sheet.cell(row=rownum, column=columnno).value
-
-    @staticmethod
-    @allure.step("Writing Excel data")
-    def write_data(file, sheet_name, rownum, columnno, data):
-        """Write data to specific cell"""
-        workbook = ExcelHandler.load_workbook(file)
-        sheet = ExcelHandler.get_sheet(workbook, sheet_name)
-        sheet.cell(row=rownum, column=columnno).value = data
-        workbook.save(file)

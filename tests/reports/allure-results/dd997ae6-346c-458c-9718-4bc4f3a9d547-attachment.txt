@@ -1,0 +1,1 @@
+Error in test execution: type object 'ReportHandler' has no attribute 'get_styles'

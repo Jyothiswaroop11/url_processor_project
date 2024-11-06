@@ -1,3 +1,4 @@
+# utils/config_handler.py
 import os
 import json
 import shutil
@@ -9,10 +10,7 @@ class Configuration:
     @staticmethod
     def load_config():
         """Load configuration from config.json"""
-        config_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'config.json'
-        )
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
         try:
             with open(config_path, 'r') as f:
                 return json.load(f)
@@ -28,7 +26,11 @@ class Configuration:
         # Load custom config
         custom_config = Configuration.load_config()
 
-        # Default config
+        # Convert relative paths to absolute paths
+        if 'excel_path' in custom_config and not os.path.isabs(custom_config['excel_path']):
+            custom_config['excel_path'] = os.path.join(project_root, custom_config['excel_path'])
+
+        # Default config with absolute paths
         default_config = {
             "excel_path": os.path.join(project_root, "resources", "links.xlsx"),
             "screenshots_dir": os.path.join(project_root, "reports", "screenshots"),
@@ -51,16 +53,18 @@ class Configuration:
     @staticmethod
     def get_path(path_name):
         """Get specific path from configuration"""
+        config = Configuration.get_config()
         paths = {
-            "excel": Configuration.get_config()["excel_path"],
-            "screenshots": Configuration.get_config()["screenshots_dir"],
-            "reports": Configuration.get_config()["reports_dir"],
-            "extent_report": Configuration.get_config()["extent_report_dir"],
-            "backup": Configuration.get_config()["backup_dir"],
-            "logs": Configuration.get_config()["logs_dir"],
-            "chrome_driver": Configuration.get_config()["chrome_driver_path"]
+            "excel": config["excel_path"],
+            "screenshots": config["screenshots_dir"],
+            "reports": config["reports_dir"],
+            "extent_report": config["extent_report_dir"],
+            "backup": config["backup_dir"],
+            "logs": config["logs_dir"],
+            "chrome_driver": config["chrome_driver_path"]
         }
-        return paths.get(path_name)
+        path = paths.get(path_name)
+        return os.path.abspath(path) if path else None
 
     @staticmethod
     @allure.step("Ensuring directories exist")
@@ -74,8 +78,9 @@ class Configuration:
             Configuration.get_path("logs")
         ]
         for directory in directories:
-            if not os.path.exists(directory):
+            if directory and not os.path.exists(directory):
                 os.makedirs(directory)
+                print(f"Created directory: {directory}")
                 allure.attach(
                     body=f"Created directory: {directory}",
                     name="Directory Creation",
@@ -89,19 +94,17 @@ class Configuration:
             extent_report_dir = Configuration.get_path("extent_report")
             backup_dir = Configuration.get_path("backup")
 
-            # Check if there are any files to backup
-            if not os.path.exists(extent_report_dir) or not os.listdir(extent_report_dir):
+            if not extent_report_dir or not os.path.exists(extent_report_dir):
                 return
 
-            # Create timestamp for backup folder
+            if not os.listdir(extent_report_dir):
+                return
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_folder = os.path.join(backup_dir, f"Backup_Report_{timestamp}")
 
-            # Create backup folder if it doesn't exist
-            if not os.path.exists(backup_folder):
-                os.makedirs(backup_folder)
+            os.makedirs(backup_folder, exist_ok=True)
 
-            # Move all files from extent report directory to backup folder
             for item in os.listdir(extent_report_dir):
                 item_path = os.path.join(extent_report_dir, item)
                 if os.path.isfile(item_path):
