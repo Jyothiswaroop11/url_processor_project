@@ -1,0 +1,59 @@
+self = <url_processor_project.tests.test_url_processor.TestURLProcessor object at 0x00000210C0A12AB0>
+excel_urls = [('oceanofgames.com', 2), ('google.com', 3), ('http://www.liquidgeneration.com/', 4), ('https://httpstat.us/403', 5)]
+
+    @allure.story("Process URLs from Excel with Error Detection")
+    def test_process_excel_urls(self, excel_urls):
+        """Test processing URLs from Excel file with error detection"""
+        try:
+            # Initialize Configuration and backup previous reports
+            Configuration.ensure_directories()
+            Configuration.backup_previous_reports()
+    
+            results = []
+            total_urls = len(excel_urls)
+            print(f"\nTotal URLs to process: {total_urls}")
+    
+            # Process each URL
+            for url, row_number in excel_urls:
+                with allure.step(f"Processing URL {row_number - 1} of {total_urls}: {url}"):
+                    print(f"\nProcessing URL {row_number - 1} of {total_urls}: {url}")
+    
+                    result = WebAutomation.process_url(url, row_number - 1)
+                    results.append(result)
+    
+                    # Add detailed Allure report
+                    status_color = "green" if result['status'] == 'Success' else "red"
+                    allure.attach(
+                        body=f"""
+                        URL: {url}
+                        Status: {result['status']}
+                        Error: {result['error'] if result['error'] else 'None'}
+                        Load Time: {result.get('load_time', 0):.2f}ms
+                        """,
+                        name=f"URL Test Result {row_number - 1}",
+                        attachment_type=allure.attachment_type.TEXT
+                    )
+    
+                    # Wait between URLs
+                    if row_number < total_urls:
+                        wait_time = Configuration.get_config()["wait_between_urls"]
+                        print(f"Waiting {wait_time} seconds before next URL...")
+                        time.sleep(wait_time)
+    
+            # Generate summary
+            successful = sum(1 for r in results if r['status'] == 'Success')
+            failed = len(results) - successful
+    
+            summary = f"""
+            Processing Summary:
+            Total URLs processed: {len(results)}
+            Successfully loaded: {successful}
+            Failed to load: {failed}
+            Success rate: {(successful / len(results) * 100 if results else 0):.2f}%
+    
+            Failed URLs:
+>           {self._format_failed_urls(results)}
+            """
+E           AttributeError: 'TestURLProcessor' object has no attribute '_format_failed_urls'
+
+test_url_processor.py:93: AttributeError

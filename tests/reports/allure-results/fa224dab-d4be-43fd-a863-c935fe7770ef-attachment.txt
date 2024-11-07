@@ -1,0 +1,2 @@
+URL: https://httpstat.us/404
+Error: HTTP 404 Error

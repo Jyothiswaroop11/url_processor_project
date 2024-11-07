@@ -1,0 +1,1 @@
+Error in test execution: 'TestURLProcessor' object has no attribute '_format_failed_urls'

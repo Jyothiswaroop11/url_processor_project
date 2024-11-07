@@ -1,8 +1,10 @@
+# utils/config_handler.py
 import os
 import json
 import shutil
 import allure
 from datetime import datetime
+
 
 class Configuration:
     @staticmethod
@@ -68,6 +70,10 @@ class Configuration:
     @allure.step("Ensuring directories exist")
     def ensure_directories():
         """Create necessary directories if they don't exist"""
+        # First clean allure results
+        Configuration.clean_allure_results()
+
+        # Then ensure all directories exist
         directories = [
             Configuration.get_path("screenshots"),
             Configuration.get_path("reports"),
@@ -84,6 +90,37 @@ class Configuration:
                     name="Directory Creation",
                     attachment_type=allure.attachment_type.TEXT
                 )
+
+    @staticmethod
+    def clean_allure_results():
+        """Clean up previous Allure results"""
+        try:
+            allure_results_dir = Configuration.get_path("reports")
+            if os.path.exists(allure_results_dir):
+                # Remove all files in the directory
+                for filename in os.listdir(allure_results_dir):
+                    file_path = os.path.join(allure_results_dir, filename)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                        print(f"Removed previous Allure result: {filename}")
+                    except Exception as e:
+                        print(f"Error removing {filename}: {str(e)}")
+
+                print("Previous Allure results cleaned successfully")
+            else:
+                print("Allure results directory does not exist yet")
+
+        except Exception as e:
+            error_msg = f"Error cleaning Allure results: {str(e)}"
+            print(error_msg)
+            allure.attach(
+                body=error_msg,
+                name="Cleanup Error",
+                attachment_type=allure.attachment_type.TEXT
+            )
 
     @staticmethod
     def backup_previous_reports():
@@ -107,9 +144,14 @@ class Configuration:
             for item in os.listdir(extent_report_dir):
                 item_path = os.path.join(extent_report_dir, item)
                 if os.path.isfile(item_path):
-                    # Create backup filename with timestamp
-                    backup_filename = f"Backup_{timestamp}_{item}"
+                    # Remove .html extension and any timestamp if present
+                    base_name = os.path.splitext(item)[0]  # Remove .html
+                    base_name = base_name.split('_')[0]  # Get only TestReport part
+
+                    # Create new backup filename
+                    backup_filename = f"Previous-Report-{base_name}_{timestamp}.html"
                     backup_path = os.path.join(backup_dir, backup_filename)
+
                     shutil.move(item_path, backup_path)
                     print(f"Backed up {item} to {backup_path}")
 

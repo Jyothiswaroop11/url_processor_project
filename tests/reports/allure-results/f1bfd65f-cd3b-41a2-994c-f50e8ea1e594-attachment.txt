@@ -1,0 +1,10 @@
+
+            Processing Summary:
+            Total URLs processed: 4
+            Successfully loaded: 3
+            Failed to load: 1
+            Success rate: 75.00%
+
+            Failed URLs:
+            - https://httpstat.us/403: HTTP 403 Error
+            

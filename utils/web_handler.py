@@ -1,7 +1,8 @@
-#utils/web_handler.py
+# utils/web_handler.py
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import allure
@@ -10,6 +11,7 @@ import os
 from datetime import datetime
 from .config_handler import Configuration
 from .url_handler import URLHandler
+
 
 class WebDriverSetup:
     @staticmethod
@@ -55,6 +57,7 @@ class WebDriverSetup:
             )
             raise
 
+
 class WebAutomation:
     @staticmethod
     def check_page_loaded(driver, timeout=30):
@@ -75,6 +78,48 @@ class WebAutomation:
                 attachment_type=allure.attachment_type.TEXT
             )
             return False
+
+    @staticmethod
+    def check_page_errors(driver):
+        """Check for common error patterns on the page"""
+        error_patterns = {
+            '404': ['404', 'page not found', 'not found', '404 error'],
+            '403': ['403', 'forbidden', 'access denied', '403 error'],
+            '500': ['500', 'internal server error', 'server error', '500 error'],
+            '502': ['502', 'bad gateway', '502 error'],
+            '503': ['503', 'service unavailable', '503 error'],
+            '504': ['504', 'gateway timeout', '504 error']
+        }
+
+        try:
+            # Get page title and body text
+            page_title = driver.title.lower()
+            body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+
+            # Check response code from browser
+            navigation_entry = driver.execute_script("return window.performance.getEntriesByType('navigation')[0];")
+            if navigation_entry:
+                response_status = navigation_entry.get('responseStatus')
+                if response_status and response_status >= 400:
+                    return f"HTTP {response_status} Error"
+
+            # Check for error patterns in content
+            for error_code, patterns in error_patterns.items():
+                for pattern in patterns:
+                    if pattern in page_title or pattern in body_text:
+                        return f"HTTP {error_code} Error detected in page content"
+
+            # Additional checks for common error indicators
+            error_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'error')]")
+            for element in error_elements:
+                element_text = element.text.lower()
+                if any(err in element_text for err in ['404', '403', '500', 'not found', 'forbidden']):
+                    return f"Error message found: {element.text}"
+
+            return None
+
+        except Exception as e:
+            return f"Error checking page content: {str(e)}"
 
     @staticmethod
     def save_screenshot(driver, url, row_number):
@@ -166,31 +211,37 @@ class WebAutomation:
 
             # Wait for page load
             if WebAutomation.check_page_loaded(driver):
-                end_time = time.time()
-                load_time = (end_time - start_time) * 1000
-
-                result['steps'].append({
-                    'status': 'SUCCESS',
-                    'timestamp': datetime.now().strftime('%H:%M:%S'),
-                    'message': f"Page loaded successfully in {load_time:.2f}ms"
-                })
-
-                # Take screenshot
-                screenshot_path = WebAutomation.save_screenshot(driver, url, row_number)
-                if screenshot_path:
+                # Check for errors on the page
+                error = WebAutomation.check_page_errors(driver)
+                if error:
+                    result['steps'].append({
+                        'status': 'FAIL',
+                        'timestamp': datetime.now().strftime('%H:%M:%S'),
+                        'message': f"Page loaded but encountered error: {error}"
+                    })
+                    result['error'] = error
+                else:
+                    end_time = time.time()
+                    load_time = (end_time - start_time) * 1000
+                    result.update({
+                        'status': 'Success',
+                        'load_time': load_time
+                    })
                     result['steps'].append({
                         'status': 'SUCCESS',
                         'timestamp': datetime.now().strftime('%H:%M:%S'),
-                        'message': "Screenshot captured successfully",
-                        'screenshot': screenshot_path
+                        'message': f"Page loaded successfully in {load_time:.2f}ms"
                     })
 
-                result.update({
-                    'status': 'Success',
-                    'load_time': load_time,
-                    'screenshot': screenshot_path
-                })
-
+                # Take screenshot regardless of error status
+                screenshot_path = WebAutomation.save_screenshot(driver, url, row_number)
+                if screenshot_path:
+                    result['screenshot'] = screenshot_path
+                    result['steps'].append({
+                        'status': 'SUCCESS',
+                        'timestamp': datetime.now().strftime('%H:%M:%S'),
+                        'message': "Screenshot captured successfully"
+                    })
             else:
                 result['steps'].append({
                     'status': 'FAIL',
