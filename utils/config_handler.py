@@ -1,10 +1,8 @@
-# utils/config_handler.py
 import os
 import json
 import shutil
 import allure
 from datetime import datetime
-
 
 class Configuration:
     @staticmethod
@@ -89,7 +87,7 @@ class Configuration:
 
     @staticmethod
     def backup_previous_reports():
-        """Backup previous reports to timestamped directory"""
+        """Backup previous reports directly to backup directory"""
         try:
             extent_report_dir = Configuration.get_path("extent_report")
             backup_dir = Configuration.get_path("backup")
@@ -100,17 +98,22 @@ class Configuration:
             if not os.listdir(extent_report_dir):
                 return
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_folder = os.path.join(backup_dir, f"Backup_Report_{timestamp}")
+            # Create backup directory if it doesn't exist
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
 
-            os.makedirs(backup_folder, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             for item in os.listdir(extent_report_dir):
                 item_path = os.path.join(extent_report_dir, item)
                 if os.path.isfile(item_path):
-                    shutil.move(item_path, os.path.join(backup_folder, item))
+                    # Create backup filename with timestamp
+                    backup_filename = f"Backup_{timestamp}_{item}"
+                    backup_path = os.path.join(backup_dir, backup_filename)
+                    shutil.move(item_path, backup_path)
+                    print(f"Backed up {item} to {backup_path}")
 
-            print(f"Previous reports backed up to: {backup_folder}")
+            print(f"Previous reports backed up to: {backup_dir}")
 
         except Exception as e:
             print(f"Error during backup: {str(e)}")

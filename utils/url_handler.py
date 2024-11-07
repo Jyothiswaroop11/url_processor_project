@@ -1,3 +1,4 @@
+#utils/url_handler
 from urllib.parse import urlparse
 import re
 import allure
