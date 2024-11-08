@@ -35,9 +35,11 @@ class Configuration:
             "excel_path": os.path.join(project_root, "resources", "links.xlsx"),
             "screenshots_dir": os.path.join(project_root, "reports", "screenshots"),
             "reports_dir": os.path.join(project_root, "reports", "allure-results"),
-            "extent_report_dir": os.path.join(project_root, "reports", "ExtentReport"),
-            "backup_dir": os.path.join(project_root, "reports", "backup"),
+            "extent_report_dir": os.path.join(project_root, "reports", "TestReport"),
+            "backup_dir": os.path.join(project_root, "reports", "Backup-TestReport"),
             "logs_dir": os.path.join(project_root, "logs"),
+            "output_excel_dir": os.path.join(project_root, "reports", "Output-Excel"),
+            "backup_excel_dir": os.path.join(project_root, "reports", "Backup-Excel"),
             "chrome_driver_path": custom_config.get("chrome_driver_path", ""),
             "sheet_name": "Sheet1",
             "page_load_timeout": 60,
@@ -61,6 +63,8 @@ class Configuration:
             "extent_report": config["extent_report_dir"],
             "backup": config["backup_dir"],
             "logs": config["logs_dir"],
+            "output_excel": config["output_excel_dir"],
+            "backup_excel": config["backup_excel_dir"],
             "chrome_driver": config["chrome_driver_path"]
         }
         path = paths.get(path_name)
@@ -79,7 +83,9 @@ class Configuration:
             Configuration.get_path("reports"),
             Configuration.get_path("extent_report"),
             Configuration.get_path("backup"),
-            Configuration.get_path("logs")
+            Configuration.get_path("logs"),
+            Configuration.get_path("output_excel"),
+            Configuration.get_path("backup_excel")
         ]
         for directory in directories:
             if directory and not os.path.exists(directory):
