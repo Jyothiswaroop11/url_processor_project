@@ -1,4 +1,3 @@
-# tests/test_url_processor.py
 import pytest
 import allure
 import os
@@ -24,40 +23,74 @@ class TestURLProcessor:
     @pytest.fixture(scope="class")
     def excel_urls(self):
         """Fixture to read URLs from Excel file"""
-        config = Configuration.get_config()
-        excel_path = config["excel_path"]
-        sheet_name = config["sheet_name"]
+        try:
+            config = Configuration.get_config()
+            excel_path = config["excel_path"]
+            sheet_name = config["sheet_name"]
 
-        rows = ExcelHandler.get_row_count(excel_path, sheet_name)
-        urls = []
+            if not os.path.exists(excel_path):
+                raise FileNotFoundError(f"Excel file not found at: {excel_path}")
 
-        # Start from row 2 to skip header
-        for row in range(2, rows + 1):
-            url = ExcelHandler.read_data(excel_path, sheet_name, row, 1)
-            if url:
-                urls.append((url, row))
+            # Load the Excel file
+            workbook = ExcelHandler.load_workbook(excel_path)
+            sheet = ExcelHandler.get_sheet(workbook, sheet_name)
 
-        return urls
+            # Get the data in the expected format
+            urls = []
+            for row in range(2, sheet.max_row + 1):  # Start from row 2 to skip header
+                url = sheet.cell(row=row, column=1).value
+                if url:
+                    urls.append((url, row))
+                else:
+                    print(f"Warning: Empty URL found in row {row}")
+
+            if not urls:
+                raise ValueError("No valid URLs found in Excel file")
+
+            return urls
+
+        except Exception as e:
+            error_msg = f"Error reading Excel file: {str(e)}"
+            print(f"\nError: {error_msg}")
+            allure.attach(
+                body=error_msg,
+                name="Excel Reading Error",
+                attachment_type=allure.attachment_type.TEXT
+            )
+            raise
 
     @allure.story("Process URLs from Excel with Error Detection")
     def test_process_excel_urls(self, excel_urls):
         """Test processing URLs from Excel file with error detection"""
+        start_time = datetime.now()
         try:
             # Initialize Configuration and backup previous reports
             Configuration.ensure_directories()
             Configuration.backup_previous_reports()
+            ExcelHandler.backup_previous_report()
 
             results = []
             total_urls = len(excel_urls)
-            print(f"\nTotal URLs to process: {total_urls}")
+            successful = 0
+            failed = 0
+
+            print(f"\nStarting URL processing at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Total URLs to process: {total_urls}")
 
             # Process each URL
             for url, row_number in excel_urls:
                 with allure.step(f"Processing URL {row_number - 1} of {total_urls}: {url}"):
                     print(f"\nProcessing URL {row_number - 1} of {total_urls}: {url}")
 
+                    # Process URL and get result
                     result = WebAutomation.process_url(url, row_number - 1)
                     results.append(result)
+
+                    # Update counters
+                    if result['status'] == 'Success':
+                        successful += 1
+                    else:
+                        failed += 1
 
                     # Add detailed Allure report
                     status_color = "green" if result['status'] == 'Success' else "red"
@@ -72,16 +105,13 @@ class TestURLProcessor:
                         attachment_type=allure.attachment_type.TEXT
                     )
 
-                    # Wait between URLs
+                    # Wait between URLs if not the last URL
                     if row_number < total_urls:
                         wait_time = Configuration.get_config()["wait_between_urls"]
                         print(f"Waiting {wait_time} seconds before next URL...")
                         time.sleep(wait_time)
 
             # Generate summary
-            successful = sum(1 for r in results if r['status'] == 'Success')
-            failed = len(results) - successful
-
             summary = f"""
             Processing Summary:
             Total URLs processed: {len(results)}
@@ -93,6 +123,10 @@ class TestURLProcessor:
             {self._format_failed_urls(results)}
             """
             print("\n" + summary)
+
+            # Generate Excel report
+            excel_report_path = ExcelHandler.generate_report(results)
+            print(f"\nExcel Report generated: {excel_report_path}")
 
             # Generate HTML report
             report_path = ReportHandler.generate_html_report(results)
