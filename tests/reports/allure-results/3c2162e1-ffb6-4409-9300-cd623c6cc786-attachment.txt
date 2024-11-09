@@ -1,2 +1,0 @@
-Successfully read Excel file.
-Total rows: 5

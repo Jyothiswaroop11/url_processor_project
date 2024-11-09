@@ -1,7 +1,0 @@
-
-            Processing Summary:
-            Total URLs processed: 4
-            Successfully loaded: 2
-            Failed to load: 2
-            Success rate: 50.00%
-            

@@ -1,6 +1,0 @@
-
-                        URL: https://httpstat.us/403
-                        Status: Failed
-                        Error: HTTP 403 Error
-                        Load Time: 0.00ms
-                        

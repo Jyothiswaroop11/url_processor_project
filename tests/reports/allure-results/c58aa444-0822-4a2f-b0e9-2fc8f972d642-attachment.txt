@@ -1,1 +1,0 @@
-Starting test: test_url_formatting[http://google.com-http://google.com]

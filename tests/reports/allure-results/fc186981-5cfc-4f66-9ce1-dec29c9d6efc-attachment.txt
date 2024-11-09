@@ -1,6 +1,0 @@
-
-                        URL: google.com
-                        Status: Success
-                        Error: None
-                        Load Time: 4041.19ms
-                        

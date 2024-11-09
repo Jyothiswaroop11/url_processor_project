@@ -1,2 +1,0 @@
-Input URL: https://google.com
-Formatted URL: https://google.com

@@ -1,1 +1,0 @@
-Test duration: 73.20 seconds

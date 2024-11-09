@@ -1,1 +1,0 @@
-Starting test: test_error_status_detection[https://httpstat.us/500-HTTP 500]
