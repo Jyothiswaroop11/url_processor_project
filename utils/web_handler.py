@@ -6,7 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import allure
-import time
+from time import time, sleep
 import os
 from datetime import datetime
 from .config_handler import Configuration
@@ -67,7 +67,7 @@ class WebAutomation:
             WebDriverWait(driver, timeout).until(
                 lambda d: d.execute_script("return document.readyState") == "complete"
             )
-            time.sleep(2)
+            sleep(2)
             print("Page load complete")
             return True
         except Exception as e:
@@ -91,7 +91,29 @@ class WebAutomation:
             '504': ['504', 'gateway timeout', '504 error']
         }
 
+        error_mappings = {
+            'ERR_NAME_NOT_RESOLVED': 'DNS resolution failed - Unable to resolve domain name',
+            'ERR_CONNECTION_REFUSED': 'Connection refused by the server',
+            'ERR_CONNECTION_TIMED_OUT': 'Connection timed out',
+            'ERR_NETWORK_UNREACHABLE': 'Network is unreachable',
+            'ERR_CONNECTION_RESET': 'Connection was reset',
+            'ERR_SSL_PROTOCOL_ERROR': 'SSL/TLS protocol error',
+            'ERR_CERT_AUTHORITY_INVALID': 'Invalid SSL certificate',
+            'ERR_BAD_SSL_CLIENT_AUTH_CERT': 'Invalid client SSL certificate',
+            'ERR_TUNNEL_CONNECTION_FAILED': 'Failed to establish tunnel connection',
+            'ERR_NO_SUPPORTED_PROXIES': 'No supported proxies',
+            'ERR_EMPTY_RESPONSE': 'Server returned empty response',
+            'ERR_RESPONSE_HEADERS_TRUNCATED': 'Response headers truncated',
+            'ERR_CONTENT_DECODING_FAILED': 'Content decoding failed'
+        }
+
         try:
+            # Check for Chrome error codes in page source
+            page_source = driver.page_source.lower()
+            for error_key, error_message in error_mappings.items():
+                if error_key.lower() in page_source:
+                    return error_message
+
             # Get page title and body text
             page_title = driver.title.lower()
             body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
@@ -109,20 +131,18 @@ class WebAutomation:
                     if pattern in page_title or pattern in body_text:
                         return f"HTTP {error_code} Error detected in page content"
 
-            # Additional checks for common error indicators
-            error_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'error')]")
-            for element in error_elements:
-                element_text = element.text.lower()
-                if any(err in element_text for err in ['404', '403', '500', 'not found', 'forbidden']):
-                    return f"Error message found: {element.text}"
-
             return None
 
         except Exception as e:
+            error_str = str(e).lower()
+            # Check for Selenium/Chrome specific errors
+            for error_key, error_message in error_mappings.items():
+                if error_key.lower() in error_str:
+                    return error_message
             return f"Error checking page content: {str(e)}"
 
-    @staticmethod
-    def save_screenshot(driver, url, row_number):
+    @classmethod
+    def save_screenshot(cls, driver, url, row_number):
         """Takes and saves screenshot with URL name"""
         try:
             url_name = URLHandler.get_clean_filename(url)
@@ -138,22 +158,25 @@ class WebAutomation:
             max_retries = 3
             for attempt in range(max_retries):
                 try:
+                    # Add a small delay before taking screenshot
+                    sleep(1)  # Using imported sleep instead of time.sleep
                     driver.save_screenshot(filepath)
                     print(f"Screenshot saved: {filepath}")
-                    break
+
+                    # Attach to Allure report
+                    allure.attach(
+                        driver.get_screenshot_as_png(),
+                        name=f"Screenshot_{url_name}",
+                        attachment_type=allure.attachment_type.PNG
+                    )
+
+                    return filepath
                 except Exception as e:
                     if attempt == max_retries - 1:
                         raise
                     print(f"Screenshot attempt {attempt + 1} failed, retrying...")
-                    time.sleep(1)
+                    sleep(1)  # Using imported sleep instead of time.sleep
 
-            allure.attach(
-                body=driver.get_screenshot_as_png(),
-                name=f"Screenshot_{url_name}",
-                attachment_type=allure.attachment_type.PNG
-            )
-
-            return filepath
         except Exception as e:
             print(f"Error saving screenshot: {str(e)}")
             allure.attach(
@@ -163,11 +186,10 @@ class WebAutomation:
             )
             return None
 
-    @staticmethod
-    def process_url(url, row_number):
-        """Process a single URL with new browser instance"""
+    @classmethod
+    def process_url(cls, url, row_number):
         driver = None
-        start_time = time.time()
+        start_time = time()
         result = {
             'url': url,
             'status': 'Failed',
@@ -187,80 +209,80 @@ class WebAutomation:
                 'message': f"Starting to process URL: {url}"
             })
 
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    driver = WebDriverSetup.create_driver()
-                    break
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        raise
-                    print(f"Driver creation attempt {attempt + 1} failed, retrying...")
-                    time.sleep(2)
-
-            result['steps'].append({
-                'status': 'SUCCESS',
-                'timestamp': datetime.now().strftime('%H:%M:%S'),
-                'message': "Chrome WebDriver initialized successfully"
-            })
+            driver = WebDriverSetup.create_driver()
 
             # Navigate to URL
             formatted_url = URLHandler.format_url(url)
             print(f"Navigating to: {formatted_url}")
             driver.get(formatted_url)
 
-            # Wait for page load
-            if WebAutomation.check_page_loaded(driver):
-                # Check for errors on the page
-                error = WebAutomation.check_page_errors(driver)
+            # Always try to take a screenshot, regardless of page load status
+            screenshot_path = cls.save_screenshot(driver, url, row_number)
+            if screenshot_path:
+                result['screenshot'] = screenshot_path
+                result['steps'].append({
+                    'status': 'SUCCESS',
+                    'timestamp': datetime.now().strftime('%H:%M:%S'),
+                    'message': "Screenshot captured successfully"
+                })
+
+            # Continue with page load check and other processing
+            if cls.check_page_loaded(driver):
+                error = cls.check_page_errors(driver)
                 if error:
+                    result['error'] = error
                     result['steps'].append({
                         'status': 'FAIL',
                         'timestamp': datetime.now().strftime('%H:%M:%S'),
                         'message': f"Page loaded but encountered error: {error}"
                     })
-                    result['error'] = error
                 else:
-                    end_time = time.time()
-                    load_time = (end_time - start_time) * 1000
-                    result.update({
-                        'status': 'Success',
-                        'load_time': load_time
-                    })
+                    result['status'] = 'Success'
+                    end_time = time()
+                    result['load_time'] = (end_time - start_time) * 1000
                     result['steps'].append({
                         'status': 'SUCCESS',
                         'timestamp': datetime.now().strftime('%H:%M:%S'),
-                        'message': f"Page loaded successfully in {load_time:.2f}ms"
-                    })
-
-                # Take screenshot regardless of error status
-                screenshot_path = WebAutomation.save_screenshot(driver, url, row_number)
-                if screenshot_path:
-                    result['screenshot'] = screenshot_path
-                    result['steps'].append({
-                        'status': 'SUCCESS',
-                        'timestamp': datetime.now().strftime('%H:%M:%S'),
-                        'message': "Screenshot captured successfully"
+                        'message': f"Page loaded successfully in {result['load_time']:.2f}ms"
                     })
             else:
+                result['error'] = "Page load timeout"
                 result['steps'].append({
                     'status': 'FAIL',
                     'timestamp': datetime.now().strftime('%H:%M:%S'),
                     'message': "Page failed to load completely"
                 })
-                result['error'] = "Page load timeout"
 
         except Exception as e:
             error_msg = str(e)
             print(f"Error processing URL: {error_msg}")
+            result['error'] = error_msg
             result['steps'].append({
                 'status': 'FATAL',
                 'timestamp': datetime.now().strftime('%H:%M:%S'),
                 'message': f"Error: {error_msg}"
             })
-            result['error'] = error_msg
+
+            # Try to take screenshot even if there was an error
+            if driver:
+                try:
+                    screenshot_path = cls.save_screenshot(driver, url, row_number)
+                    if screenshot_path:
+                        result['screenshot'] = screenshot_path
+                        result['steps'].append({
+                            'status': 'SUCCESS',
+                            'timestamp': datetime.now().strftime('%H:%M:%S'),
+                            'message': "Screenshot captured after error"
+                        })
+                except Exception as screenshot_error:
+                    print(f"Failed to capture error screenshot: {str(screenshot_error)}")
 
         finally:
+            # Always set end time and calculate load time
+            result['end_time'] = time()
+            if not result.get('load_time'):
+                result['load_time'] = (result['end_time'] - result['start_time']) * 1000
+
             if driver:
                 try:
                     driver.quit()
