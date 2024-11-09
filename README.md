@@ -27,8 +27,8 @@ ChromeDriver (compatible with your Chrome version)
 
 1. Clone the repository
 ```bash
-git clone <repository-url>
-cd url-validation-framework
+git clone https://github.com/Jyothiswaroop11/url_processor_project.git
+cd url_processor_project
 ```
 
 2. Install required packages
