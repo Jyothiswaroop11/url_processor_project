@@ -3,6 +3,7 @@ import openpyxl
 import allure
 import pandas as pd
 from datetime import datetime
+from time import time
 import os
 from .config_handler import Configuration
 
@@ -59,11 +60,18 @@ class ExcelHandler:
             # Prepare data for Excel
             data = []
             for index, result in enumerate(results, 1):
+                # Calculate load time for both successful and failed URLs
+                load_time = result.get('load_time', 0)
+                if load_time == 0 and result.get('start_time'):
+                    end_time = time() if 'end_time' not in result else result['end_time']
+                    load_time = (end_time - result['start_time']) * 1000
+
                 data.append({
                     'S.no': index,
                     'URL': result['url'],
                     'Pass/Fail': 'Pass' if result['status'] == 'Success' else 'Fail',
-                    'Time(ms)': round(result.get('load_time', 0), 2)
+                    'Time(ms)': round(load_time, 2),
+                    #'Error': result.get('error', 'N/A') if result['status'] != 'Success' else 'N/A'
                 })
 
             # Create DataFrame
@@ -87,6 +95,7 @@ class ExcelHandler:
             ws = wb.active
 
             # Write headers
+            #headers = ['S.no', 'URL', 'Pass/Fail', 'Time(ms)', 'Error']
             headers = ['S.no', 'URL', 'Pass/Fail', 'Time(ms)']
             for col, header in enumerate(headers, 1):
                 ws.cell(row=1, column=col, value=header)
@@ -105,6 +114,7 @@ class ExcelHandler:
             ws.column_dimensions['B'].width = 50
             ws.column_dimensions['C'].width = 15
             ws.column_dimensions['D'].width = 15
+            # ws.column_dimensions['E'].width = 50
 
             # Save the workbook
             wb.save(output_path)
